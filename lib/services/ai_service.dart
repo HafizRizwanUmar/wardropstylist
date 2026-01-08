@@ -1,20 +1,19 @@
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/clothing_item.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import '../core/constants/api_constants.dart';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 class AIService {
   final _uuid = const Uuid();
+  static const _baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-  Future<ClothingItem> analyzeImage(String imagePath) async {
-    final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: kGeminiApiKey);
-    final imageBytes = await File(imagePath).readAsBytes();
+  Future<ClothingItem> analyzeImage(Uint8List imageBytes, String mimeType) async {
+    final url = Uri.parse('$_baseUrl?key=$kGeminiApiKey');
     
-    final prompt = TextPart('''
+    final promptText = '''
     Analyze this clothing item and return a JSON object with the following fields:
     - type: (e.g., T-Shirt, Jeans, Dress)
     - subtype: (e.g., Crew Neck, Skinny, Maxi)
@@ -26,19 +25,45 @@ class AIService {
     - pairingSuggestions: [List of 2-3 specific items that would go well with this]
     
     Only return valid JSON. Do not include markdown formatting like ```json ... ```.
-    ''');
-    
-    final content = [Content.multi([prompt, DataPart('image/jpeg', imageBytes)])];
-    
+    ''';
+
+    final body = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {"text": promptText},
+            {
+              "inline_data": {
+                "mime_type": mimeType,
+                "data": base64Encode(imageBytes)
+              }
+            }
+          ]
+        }
+      ]
+    });
+
     try {
-      final response = await model.generateContent(content);
-      final text = response.text ?? '{}';
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode != 200) {
+        print('Gemini API Error: ${response.body}');
+        throw Exception('Failed to analyze image: ${response.statusCode}');
+      }
+
+      final jsonResponse = jsonDecode(response.body);
+      final textFn = jsonResponse['candidates']?[0]?['content']?['parts']?[0]?['text'];
+      var text = textFn?.toString() ?? '{}';
       final cleanText = text.replaceAll('```json', '').replaceAll('```', '').trim();
       final data = jsonDecode(cleanText) as Map<String, dynamic>;
       
       return ClothingItem(
         id: _uuid.v4(),
-        imageUrl: imagePath,
+        imageUrl: '',
         type: data['type'] ?? 'Unknown',
         subtype: data['subtype'] ?? 'Unknown',
         colors: List<String>.from(data['colors'] ?? []),
@@ -51,10 +76,9 @@ class AIService {
       );
     } catch (e) {
       print('Error analyzing image: $e');
-      // Return a basic item on error/fallback
       return ClothingItem(
         id: _uuid.v4(),
-        imageUrl: imagePath,
+        imageUrl: '',
         type: 'Unknown Item',
         subtype: 'Unknown',
         colors: [],
@@ -69,13 +93,13 @@ class AIService {
   }
 
   Future<String> getOutfitRecommendation(String query, List<ClothingItem> wardrobe) async {
-    final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: kGeminiApiKey);
-    
+    final url = Uri.parse('$_baseUrl?key=$kGeminiApiKey');
+
     final wardrobeDescription = wardrobe.map((item) => 
       '- ${item.colors.join(", ")} ${item.pattern} ${item.type} (${item.subtype}) suitable for ${item.events.join(", ")}'
     ).join('\n');
     
-    final prompt = '''
+    final promptText = '''
     You are a professional fashion stylist. The user is asking: "$query".
     
     Here is their current wardrobe:
@@ -85,11 +109,37 @@ class AIService {
     Explain why you chose it. If they don't have suitable items, suggest what they should buy.
     Keep the tone helpful, stylish, and encouraging. Use emojis.
     ''';
-    
-    final content = [Content.text(prompt)];
-    final response = await model.generateContent(content);
-    
-    return response.text ?? "I couldn't generate a recommendation at this time. Please try again! 👗";
+
+    final body = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {"text": promptText}
+          ]
+        }
+      ]
+    });
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      );
+
+      if (response.statusCode != 200) {
+        print('Gemini API Error: ${response.body}');
+        return "I'm having trouble connecting to the style server right now. Please try again later! 😓 (Status: ${response.statusCode})";
+      }
+
+      final jsonResponse = jsonDecode(response.body);
+      final text = jsonResponse['candidates']?[0]?['content']?['parts']?[0]?['text'];
+      
+      return text?.toString() ?? "I couldn't generate a recommendation at this time. Please try again! 👗";
+    } catch (e) {
+      print('GenAI Error: $e');
+      return "I'm having trouble connecting to the style server right now. Please try again later! 😓";
+    }
   }
 }
 

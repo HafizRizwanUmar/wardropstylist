@@ -28,21 +28,36 @@ class ChatNotifier extends StateNotifier<List<ChatMessage>> {
         timestamp: DateTime.now());
     state = [...state, userMsg];
 
-    // 2. Mock AI typing/processing
-    // (Optional: add a "typing" state here)
+    // 2. Add "Thinking..." message
+    final typingMsg = ChatMessage(
+      id: 'typing',
+      text: "Thinking... 🤔",
+      isUser: false,
+      timestamp: DateTime.now(),
+    );
+    state = [...state, typingMsg];
 
     // 3. Get Recommendation
-    // We need access to the current wardrobe to give context
-    final wardrobe = _ref.read(wardrobeProvider);
-    final responseText = await _aiService.getOutfitRecommendation(text, wardrobe);
+    String responseText;
+    try {
+      // We need access to the current wardrobe to give context
+      final wardrobe = _ref.read(wardrobeProvider);
+      responseText = await _aiService.getOutfitRecommendation(text, wardrobe);
+    } catch (e) {
+      responseText = "Sorry, I encountered an error. Please try again.";
+    }
 
-    // 4. Add AI response
+    // 4. Remove typing message and add AI response
     final aiMsg = ChatMessage(
         id: _uuid.v4(),
         text: responseText,
         isUser: false,
         timestamp: DateTime.now());
-    state = [...state, aiMsg];
+    
+    state = [
+      ...state.where((msg) => msg.id != 'typing'),
+      aiMsg
+    ];
   }
 }
 

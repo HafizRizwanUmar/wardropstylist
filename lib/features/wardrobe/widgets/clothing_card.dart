@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 import '../../../models/clothing_item.dart';
-import 'dart:io';
 
 class ClothingCard extends StatelessWidget {
   final ClothingItem item;
@@ -18,9 +17,13 @@ class ClothingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: item.imageUrl.startsWith('http') 
-                ? Image.network(item.imageUrl, fit: BoxFit.cover)
-                : Image.file(File(item.imageUrl), fit: BoxFit.cover),
+            child: item.imageUrl.isNotEmpty
+                ? Image.network(
+                    item.imageUrl, 
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.broken_image)),
+                  )
+                : const Center(child: Icon(Icons.image_not_supported)),
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),

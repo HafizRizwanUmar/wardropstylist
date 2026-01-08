@@ -1,12 +1,11 @@
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart'; // Implemented persistence for images
-import 'package:path/path.dart' as path;
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import '../../models/clothing_item.dart';
 import '../../services/ai_service.dart';
+import '../../services/auth_service.dart'; // For baseUrl
 
 class WardrobeNotifier extends StateNotifier<List<ClothingItem>> {
   final AIService _aiService;
@@ -43,37 +42,62 @@ class WardrobeNotifier extends StateNotifier<List<ClothingItem>> {
     }
   }
 
-  Future<void> addItem(String imagePath) async {
-    // 0. Save image permanently to app documents
-    final directory = await getApplicationDocumentsDirectory();
-    final name = path.basename(imagePath);
-    final savedImage = await File(imagePath).copy('${directory.path}/$name');
+  Future<void> addItem(Uint8List imageBytes, String filename) async {
+    try {
+      // 1. Upload image to backend
+      final imageUrl = await _uploadImage(imageBytes, filename);
+      if (imageUrl == null) throw Exception('Failed to upload image');
 
-    // 1. Analyze image (use the saved path)
-    final newItem = await _aiService.analyzeImage(savedImage.path);
+      // 2. Analyze image (pass bytes directly)
+      final newItem = await _aiService.analyzeImage(imageBytes, 'image/jpeg'); 
+      
+      // Update the item with the verified remote URL
+      final completeItem = newItem.copyWith(imageUrl: imageUrl);
 
-    // 2. Add to state
-    state = [...state, newItem];
+      // 3. Add to state
+      state = [...state, completeItem];
+      
+      // 4. Save to storage
+      await _saveItems();
+    } catch (e) {
+      print('Error adding item: $e');
+      rethrow;
+    }
+  }
+
+  Future<String?> _uploadImage(Uint8List bytes, String filename) async {
+    final uri = Uri.parse('$baseUrl/images/upload');
+    print('DEBUG: Attempting upload to: $uri');
+    print('DEBUG: Image size: ${bytes.length} bytes');
     
-    // 3. Save to storage
-    await _saveItems();
+    final request = http.MultipartRequest('POST', uri);
+    
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file', 
+        bytes, 
+        filename: filename
+      )
+    );
+
+    try {
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final host = baseUrl.replaceAll('/api', '');
+        return '$host${data['imageUrl']}';
+      }
+      return null;
+    } catch (e) {
+      print('Upload error: $e');
+      return null;
+    }
   }
 
   Future<void> removeItem(String id) async {
-    // Optional: Delete the file from valid storage if we want to clean up
-    final itemToRemove = state.firstWhere((item) => item.id == id, orElse: () => ClothingItem(id: '', imageUrl: '', type: '', subtype: '', colors: [], pattern: '', seasons: [], formality: '', events: [], pairingSuggestions: [], dateAdded: DateTime.now()));
-    
-    if (itemToRemove.id.isNotEmpty) {
-       try {
-         final file = File(itemToRemove.imageUrl);
-         if (await file.exists()) {
-           await file.delete();
-         }
-       } catch (e) {
-         print("Error deleting file: $e");
-       }
-    }
-
+    // API call to delete image could go here
     state = state.where((item) => item.id != id).toList();
     await _saveItems();
   }

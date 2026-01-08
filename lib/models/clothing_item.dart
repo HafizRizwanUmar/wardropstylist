@@ -57,4 +57,32 @@ class ClothingItem {
       'dateAdded': dateAdded.toIso8601String(),
     };
   }
+
+  ClothingItem copyWith({
+    String? id,
+    String? imageUrl,
+    String? type,
+    String? subtype,
+    List<String>? colors,
+    String? pattern,
+    List<String>? seasons,
+    String? formality,
+    List<String>? events,
+    List<String>? pairingSuggestions,
+    DateTime? dateAdded,
+  }) {
+    return ClothingItem(
+      id: id ?? this.id,
+      imageUrl: imageUrl ?? this.imageUrl,
+      type: type ?? this.type,
+      subtype: subtype ?? this.subtype,
+      colors: colors ?? this.colors,
+      pattern: pattern ?? this.pattern,
+      seasons: seasons ?? this.seasons,
+      formality: formality ?? this.formality,
+      events: events ?? this.events,
+      pairingSuggestions: pairingSuggestions ?? this.pairingSuggestions,
+      dateAdded: dateAdded ?? this.dateAdded,
+    );
+  }
 }

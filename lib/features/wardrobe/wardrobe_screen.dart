@@ -20,7 +20,8 @@ class WardrobeScreen extends ConsumerWidget {
       }
       
       try {
-        await ref.read(wardrobeProvider.notifier).addItem(image.path);
+        final bytes = await image.readAsBytes(); // Read bytes for Web support
+        await ref.read(wardrobeProvider.notifier).addItem(bytes, image.name);
         if (context.mounted) {
            ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Item added! 👕')),
